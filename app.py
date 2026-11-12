@@ -428,7 +428,12 @@ try:
 except Exception:
     key = st.sidebar.text_input("Pl@ntNet API key", type="password")
 
-upload = st.file_uploader("Take or upload a plant photo", type=["jpg", "jpeg", "png", "webp"])
+tab_up, tab_cam = st.tabs(["📁 Upload photo", "📷 Use camera"])
+with tab_up:
+    file_up = st.file_uploader("Choose a plant photo", type=["jpg", "jpeg", "png", "webp"])
+with tab_cam:
+    file_cam = st.camera_input("Point at the plant and take a photo")
+upload = file_cam or file_up
 if not upload:
     st.info("Tip: a clear photo of the flower gives the most accurate result.")
     st.stop()
