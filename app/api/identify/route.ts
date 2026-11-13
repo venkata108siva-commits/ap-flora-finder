@@ -30,13 +30,27 @@ export async function POST(req: Request) {
 
   let r: Response;
   try {
+    // Pl@ntNet checks "authorized domains" against Origin/Referer, so send the site's own address.
+    // Try as a plain server request first; if Pl@ntNet demands an authorised domain, retry with the site's origin.
+    const site = new URL(req.url).origin;
     r = await fetch(url, { method: "POST", body, signal: AbortSignal.timeout(25000) });
+    if (r.status === 401 || r.status === 403) {
+      r = await fetch(url, { method: "POST", body, headers: { Origin: site, Referer: `${site}/` }, signal: AbortSignal.timeout(25000) });
+    }
   } catch {
     return NextResponse.json({ error: "Couldn't reach Pl@ntNet right now. Please try again in a minute." }, { status: 502 });
   }
   if (r.status === 404) return NextResponse.json({ error: "No plant recognised. Try a clearer photo of a flower or leaf." }, { status: 404 });
   if (r.status === 401 || r.status === 403) {
-    return NextResponse.json({ error: "Pl@ntNet rejected the API key. Check the key and its authorised domains." }, { status: 502 });
+    let detail = "";
+    try {
+      const j = await r.json();
+      detail = String(j.message || j.error || "").slice(0, 160);
+    } catch {}
+    return NextResponse.json(
+      { error: `Pl@ntNet rejected the API key (${r.status}${detail ? `: ${detail}` : ""}). Check the key and its authorised domains.` },
+      { status: 502 },
+    );
   }
   if (r.status === 429) return NextResponse.json({ error: "Daily identification limit reached. Please try again later." }, { status: 429 });
   if (!r.ok) return NextResponse.json({ error: `Pl@ntNet error (${r.status}). Please try again.` }, { status: 502 });
