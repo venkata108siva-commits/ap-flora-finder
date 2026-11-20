@@ -5,6 +5,7 @@ import {
   Globe2,
   HandHeart,
   HeartPulse,
+  Images,
   Info,
   ListTree,
   ShieldCheck,
@@ -14,12 +15,13 @@ import type { SectionId } from "@/lib/types";
 
 export const SECTIONS: { id: SectionId; label: string; sub: string; Icon: LucideIcon; color: string }[] = [
   { id: "overview", label: "Overview", sub: "Names, family & summary", Icon: Info, color: "linear-gradient(135deg,#0d7a4f,#10b981)" },
+  { id: "photos", label: "Photos", sub: "Whole plant, leaf, flower, fruit, bark", Icon: Images, color: "linear-gradient(135deg,#047857,#34d399)" },
   { id: "taxonomy", label: "Taxonomy", sub: "Kingdom → species", Icon: ListTree, color: "linear-gradient(135deg,#0f766e,#14b8a6)" },
   { id: "systematics", label: "Systematics", sub: "Phylogenetic lineage", Icon: GitBranch, color: "linear-gradient(135deg,#1d4ed8,#3b82f6)" },
   { id: "distribution", label: "Distribution", sub: "Where it grows", Icon: Globe2, color: "linear-gradient(135deg,#0369a1,#0ea5e9)" },
   { id: "conservation", label: "Conservation", sub: "IUCN & native status", Icon: ShieldCheck, color: "linear-gradient(135deg,#b45309,#f59e0b)" },
   { id: "phytochemicals", label: "Phytochemicals", sub: "Compounds & concentrations", Icon: FlaskConical, color: "linear-gradient(135deg,#7c3aed,#a78bfa)" },
-  { id: "medicinal", label: "Medicinal uses", sub: "Pharmacological research", Icon: HeartPulse, color: "linear-gradient(135deg,#be123c,#f43f5e)" },
+  { id: "medicinal", label: "Medicinal uses", sub: "Traditional uses, evidence & safety", Icon: HeartPulse, color: "linear-gradient(135deg,#be123c,#f43f5e)" },
   { id: "ethnobotanical", label: "Ethnobotanical uses", sub: "Traditional knowledge", Icon: HandHeart, color: "linear-gradient(135deg,#a16207,#eab308)" },
   { id: "economic", label: "Economic uses", sub: "Food, timber, fibre & more", Icon: Coins, color: "linear-gradient(135deg,#4d7c0f,#84cc16)" },
 ];

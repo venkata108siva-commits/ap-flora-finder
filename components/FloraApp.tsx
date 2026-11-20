@@ -1,12 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BadgeCheck, Camera as CamIcon, ChevronDown, Globe, ImageUp, Leaf, Lock, RotateCcw, Smartphone, Sparkles, Sun, TriangleAlert, X } from "lucide-react";
+import { BadgeCheck, Camera as CamIcon, ChevronDown, Globe, ImageUp, Leaf, Lock, RotateCcw, Search, Smartphone, Sparkles, Sun, TriangleAlert, X } from "lucide-react";
 import type { IdentifyResult, SectionData, SectionId, Species } from "@/lib/types";
 import { COUNTRIES, SECTIONS } from "./meta";
 import { SectionBody, Verified } from "./Blocks";
 import { Loader, SectionSkeleton } from "./Loader";
 import { Camera } from "./Camera";
+import { NameSearch, type NameHit } from "./NameSearch";
+import { Speak } from "./Speak";
 import { Cropper } from "./Cropper";
 
 type Stage = "home" | "camera" | "crop" | "identifying" | "result";
@@ -88,8 +90,8 @@ export default function FloraApp() {
     if (!species) return;
     let stop = false;
     (async () => {
-      await load(species, "overview");
-      const rest = SECTIONS.map((s) => s.id).filter((id) => id !== "overview");
+      await Promise.all([load(species, "overview"), load(species, "photos")]);
+      const rest = SECTIONS.map((s) => s.id).filter((id) => id !== "overview" && id !== "photos");
       const queue = [...rest];
       const worker = async () => {
         while (!stop && queue.length) await load(species, queue.shift()!);
@@ -145,6 +147,20 @@ export default function FloraApp() {
       setError(e?.message || "Identification failed. Please try again.");
       setStage("home");
     }
+  }
+
+  /** Open a plant chosen by name: same result page as a photo identification, without the match %. */
+  function openByName(h: NameHit) {
+    const sp: Species = { name: h.name, author: h.author, family: h.family, genus: h.genus, common: [], score: -1, powo: null, gbif: h.key }; // English common names come from the Overview
+    if (photoUrl) URL.revokeObjectURL(photoUrl);
+    setPhotoUrl(null);
+    setResult({ best: sp, alternatives: [] });
+    setSpecies(sp);
+    setOpen(null);
+    setDesk("overview");
+    setError(null);
+    setStage("result");
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
   function changeCountry(c: string) {
@@ -242,6 +258,21 @@ export default function FloraApp() {
     );
   };
 
+  // For name searches: show the first verified photo (whole plant first) and common names from the Overview.
+  const photosEntry = species ? cache[keyFor(species, "photos")] : undefined;
+  const namePhoto = useMemo(() => {
+    if (photosEntry?.status !== "ok") return null;
+    const g = photosEntry.data.blocks.find((b) => b.type === "gallery") as any;
+    return g?.groups?.[0]?.items?.[0]?.thumb || null;
+  }, [photosEntry]);
+  const overviewEntry = species ? cache[keyFor(species, "overview")] : undefined;
+  const overviewCommon = useMemo(() => {
+    if (overviewEntry?.status !== "ok") return null;
+    const f = overviewEntry.data.blocks.filter((b) => b.type === "facts")[1] as any;
+    const eng = f?.items?.find((i: any) => /^English/.test(i.label));
+    return eng ? String(eng.value).split(", ") : null;
+  }, [overviewEntry]);
+
   const score = species?.score ?? 0;
   const pct = Math.round(score * 100);
   const ringColor = score >= 0.5 ? "#10b981" : score >= 0.2 ? "#f59e0b" : "#ef4444";
@@ -334,6 +365,8 @@ export default function FloraApp() {
                   <span>From your gallery or files</span>
                 </span>
               </button>
+              <div className="or">or search by name</div>
+              <NameSearch onPick={openByName} />
               <div className="tips">
                 <span>
                   <Leaf size={14} /> One flower or leaf, close up
@@ -367,17 +400,30 @@ export default function FloraApp() {
 
       {stage === "result" && species && result && (
         <main className="wrap result">
+          <div className="resultsearch">
+            <NameSearch onPick={openByName} placeholder="Search another plant by name…" />
+          </div>
           <article className="idcard">
-            <div className="photo">{photoUrl && <img src={photoUrl} alt="Your plant photo" />}</div>
+            <div className="photo">
+              {photoUrl ? <img src={photoUrl} alt="Your plant photo" /> : namePhoto ? <img src={namePhoto} alt={`${species.name} (verified photo from GBIF)`} /> : <div className="photo-ph"><Leaf size={40} /></div>}
+            </div>
             <div>
               <div className="idhead">
                 <div style={{ minWidth: 0 }}>
-                  <h2 className="sci">{species.name}</h2>
+                  <div className="sci-row">
+                    <h2 className="sci">{species.name}</h2>
+                    <Speak text={species.name} size={18} />
+                  </div>
                   <div className="author">{species.author}</div>
                   <span className="fam">
                     <Leaf size={14} /> {species.family}
                   </span>
                 </div>
+                {score < 0 ? (
+                  <span className="bynametag">
+                    <Search size={13} /> Found by name
+                  </span>
+                ) : (
                 <div className="ring" aria-label={`Match ${pct}%`}>
                   <svg viewBox="0 0 76 76">
                     <circle cx="38" cy="38" r="32" fill="none" stroke="var(--bg-2)" strokeWidth="7" />
@@ -396,13 +442,14 @@ export default function FloraApp() {
                   <b>{pct}%</b>
                   <small>match</small>
                 </div>
+                )}
               </div>
-              {species.common.length > 0 && (
+              {(species.common.length > 0 || overviewCommon) && (
                 <div className="commons">
-                  <b>Common names:</b> {species.common.slice(0, 6).join(", ")}
+                  <b>Common names:</b> {(species.common.length ? species.common : overviewCommon || []).slice(0, 6).join(", ")}
                 </div>
               )}
-              {score < LOW && (
+              {score >= 0 && score < LOW && (
                 <div className="note warn lowmatch">
                   <TriangleAlert size={16} />
                   <span>Match below 10%. Try a clearer, closer photo of a flower or leaf.</span>

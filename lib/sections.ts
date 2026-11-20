@@ -1,8 +1,13 @@
 // Builds the clean, screened content for each of the 9 sections.
 import type { Block, Cell, SectionData, SectionId, Source } from "./types";
 import { cleanName, fmt, safe } from "./http";
+import { PM_TIERS, rank } from "./rank";
+import { pmCounts, pmMesh, pmPapers, pmSearch, pubmedUrl } from "./pubmed";
+import diseaseNames from "@/data/disease-names.json";
 import {
   dukeChemicals,
+  dukeEthno,
+  gbifPhotos,
   europePMC,
   gbifDistributions,
   gbifIucn,
@@ -689,60 +694,251 @@ async function phytochemicals(ctx: Ctx): Promise<SectionData> {
   return { blocks, sources };
 }
 
-/* ===================== 7–9. USES (research papers) ===================== */
+/* ===================== PHOTOS ===================== */
 
-async function uses(ctx: Ctx, kind: "medicinal" | "ethnobotanical" | "economic"): Promise<SectionData> {
+const PART_LABELS: Record<string, string> = {
+  habit: "Whole plant / shoot",
+  leaf: "Leaf",
+  flower: "Flower",
+  fruit: "Fruit & seed",
+  bark: "Bark & stem",
+  other: "Other parts",
+  scan: "Other parts",
+};
+const PART_ORDER = ["habit", "leaf", "flower", "fruit", "bark", "other"];
+
+async function photos(ctx: Ctx): Promise<SectionData> {
+  const m = await gbifMatch(cleanName(ctx.name));
+  if (!m) return empty("No verified photos found: this name is not in the GBIF backbone.");
+  const key = gbifKey(m);
+  const ph = await gbifPhotos(key);
+  const groups: Extract<Block, { type: "gallery" }>["groups"] = [];
+  const byPart = new Map<string, typeof ph.parts>();
+  for (const p of ph.parts) {
+    const k = PART_LABELS[p.part] ? (p.part === "scan" ? "other" : p.part) : "other";
+    byPart.set(k, [...(byPart.get(k) || []), p]);
+  }
+  for (const k of PART_ORDER) {
+    const items = byPart.get(k);
+    if (items?.length) groups.push({ id: k, label: PART_LABELS[k], verified: true, items: items.slice(0, 24) });
+  }
+  if (ph.more.length) groups.push({ id: "field", label: "More field photos", verified: true, items: ph.more });
+  if (ph.specimens.length) groups.push({ id: "specimen", label: "Herbarium specimens", verified: true, items: ph.specimens });
+  if (!groups.length) return empty("No verified photos of this species have been published to GBIF yet.");
+
+  const blocks: Block[] = [
+    {
+      type: "gallery",
+      groups,
+      note: "Plant parts are labelled by the original Pl@ntNet observations (reviewed by botanists). Tap a photo to enlarge; every photo links to its record with photographer and licence.",
+    },
+    {
+      type: "stats",
+      items: [
+        { label: "Photos labelled by part", value: fmt(ph.counts.plantnet), verified: true },
+        { label: "Field photo records", value: fmt(ph.counts.field), verified: true },
+        { label: "Herbarium specimens with images", value: fmt(ph.counts.specimens), verified: true },
+      ],
+    },
+  ];
+  return {
+    blocks,
+    sources: [
+      { label: "Pl@ntNet observations (organ-labelled) via GBIF", url: `https://www.gbif.org/occurrence/gallery?taxon_key=${key}&dataset_key=7a3679ef-5582-4aaa-81f0-8c2545cafc81`, verified: true },
+      { label: "GBIF – all photos of this species", url: `https://www.gbif.org/occurrence/gallery?taxon_key=${key}`, verified: true },
+      { label: "GBIF – herbarium specimens", url: `https://www.gbif.org/occurrence/gallery?taxon_key=${key}&basis_of_record=PRESERVED_SPECIMEN`, verified: true },
+    ],
+  };
+}
+
+/* ===================== MEDICINAL (structured) ===================== */
+
+const PHARMA: [string, string][] = [
+  ["Anti-inflammatory", "Anti-Inflammatory Agents"],
+  ["Antioxidant", "Antioxidants"],
+  ["Antibacterial", "Anti-Bacterial Agents"],
+  ["Antifungal", "Antifungal Agents"],
+  ["Antiviral", "Antiviral Agents"],
+  ["Anticancer", "Antineoplastic Agents"],
+  ["Antidiabetic", "Hypoglycemic Agents"],
+  ["Cholesterol-lowering", "Hypolipidemic Agents"],
+  ["Blood-pressure lowering", "Antihypertensive Agents"],
+  ["Pain relief", "Analgesics"],
+  ["Neuroprotective", "Neuroprotective Agents"],
+  ["Anti-anxiety", "Anti-Anxiety Agents"],
+  ["Antidepressant", "Antidepressive Agents"],
+  ["Protective (cell/organ)", "Protective Agents"],
+  ["Immune-modulating", "Immunologic Factors"],
+  ["Antiparasitic", "Antiparasitic Agents"],
+];
+
+const DISEASES = diseaseNames as Record<string, string>;
+const ATLAS = "https://disease-research-atlas.vercel.app";
+
+/** Tier counts for the Rank order panel (tier 4 = everything not in another tier). */
+async function tierCounts(base: string, total: number): Promise<Record<string, number>> {
+  const c = await pmCounts(Object.fromEntries(Object.entries(PM_TIERS).map(([k, q]) => [k, `(${base}) AND ${q}`])));
+  const known = ["1", "2", "3", "5", "6"].map((k) => Math.max(0, c[k] || 0)).reduce((a, b) => a + b, 0);
+  return { ...c, "4": Math.max(0, total - known) };
+}
+
+async function medicinal(ctx: Ctx): Promise<SectionData> {
   const name = cleanName(ctx.name);
-  const cname = countryName(ctx.country);
-  const cfg = {
-    medicinal: {
-      q: "(medicinal OR pharmacological OR therapeutic OR antimicrobial OR antioxidant OR anti-inflammatory)",
-      wiki: ["medic", "pharmac", "health", "traditional medicine", "uses"],
-      intro: "Peer-reviewed research on medicinal and pharmacological properties.",
-    },
-    ethnobotanical: {
-      q: "(ethnobotany OR ethnobotanical OR ethnomedicinal OR ethnomedicine OR traditional OR folk OR indigenous)",
-      wiki: ["tradition", "folk", "culture", "ethno", "religio", "ayurved", "uses"],
-      intro: `Ethnobotanical studies on traditional use, ${cname} first.`,
-    },
-    economic: {
-      q: "(economic OR timber OR fibre OR fiber OR food OR fodder OR dye OR oil OR cultivation OR commercial OR agroforestry)",
-      wiki: ["uses", "cultivation", "culinary", "food", "timber", "economic", "commercial", "agricult"],
-      intro: "Peer-reviewed research on economic uses: food, timber, fibre, oil, fodder and more.",
-    },
-  }[kind];
+  const sp = `"${name}"[tiab]`;
+  const medQ = `${sp} AND (medicinal[tiab] OR pharmacolog*[tiab] OR therapeutic[tiab] OR "plant extracts"[MeSH Terms] OR "phytotherapy"[MeSH Terms] OR "medicine, traditional"[MeSH Terms])`;
+  const clinQ = `${sp} AND (systematic review[pt] OR meta-analysis[pt] OR randomized controlled trial[pt] OR clinical trial[pt])`;
+  const safeQ = `${sp} AND ("drug-related side effects and adverse reactions"[MeSH Terms] OR "herb-drug interactions"[MeSH Terms] OR "chemical and drug induced liver injury"[MeSH Terms] OR "toxicity tests"[MeSH Terms] OR toxicity[ti] OR safety[ti] OR "adverse"[ti])`;
+
+  // Fast local / USDA lookups run alongside the paced PubMed requests.
+  const ethnoP = dukeEthno(name);
+  const dukeP = dukeChemicals(name);
+
+  const [pharma, sample, clinical, safety, research] = await Promise.all([
+    pmCounts(Object.fromEntries(PHARMA.map(([, m]) => [m, `${sp} AND ("${m}"[MeSH Terms] OR "${m}"[Pharmacological Action])`]))),
+    pmSearch(`${sp} AND hasabstract`, 150),
+    pmPapers(clinQ, 20),
+    pmPapers(safeQ, 6),
+    pmPapers(medQ, 60),
+  ]);
+  const mesh = await pmMesh(sample.ids);
+  const freq = new Map<string, number>();
+  for (const heads of mesh) for (const h of new Set(heads)) if (DISEASES[h]) freq.set(h, (freq.get(h) || 0) + 1);
+  const candidates = [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([d]) => d);
+  const [dCounts, tiers, ethno, duke] = await Promise.all([
+    pmCounts(Object.fromEntries(candidates.map((d) => [d, `${sp} AND "${d}"[MeSH Terms]`]))),
+    tierCounts(medQ, research.total),
+    ethnoP,
+    dukeP,
+  ]);
 
   const blocks: Block[] = [];
-  let note = "";
-  let res;
-  if (kind === "ethnobotanical") {
-    const local = await europePMC(`"${name}" AND ${cfg.q} AND "${cname}"`, 6);
-    if (local.items.length >= 3) res = local;
-    else {
-      const global = await europePMC(`"${name}" AND ${cfg.q}`, 8);
-      note = local.items.length ? "" : `Few studies from ${cname}, so studies from other regions are included.`;
-      res = { total: global.total + local.total, items: dedupePapers([...local.items, ...global.items]).slice(0, 8) };
-    }
+  const sources: Source[] = [];
+
+  // 1. Traditional uses
+  blocks.push({ type: "heading", n: 1, text: "Traditional uses", sub: "Recorded uses by country or medical system" });
+  if (ethno?.rows.length) {
+    const useFreq = new Map<string, number>();
+    for (const r of ethno.rows) useFreq.set(r.use, (useFreq.get(r.use) || 0) + 1);
+    const systems = uniq(ethno.rows.map((r) => r.region));
+    blocks.push({
+      type: "stats",
+      items: [
+        { label: "Traditional uses recorded", value: fmt(useFreq.size), verified: true },
+        { label: "Countries / systems", value: fmt(systems.length), hint: systems.slice(0, 4).join(", "), verified: true },
+      ],
+    });
+    blocks.push({
+      type: "chips",
+      title: "Most frequently recorded uses",
+      verified: true,
+      items: [...useFreq.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 18).map(([u, n]) => ({ label: n > 1 ? `${u} · ${n}` : u, tone: "native" as const })),
+    });
+    blocks.push({
+      type: "deep",
+      title: `All traditional-use records · ${ethno.rows.length}`,
+      blocks: [{ type: "table", verified: true, columns: ["Use", "Country / system", "Reference"], filterColumn: 1, rows: ethno.rows.map((r) => [r.use, r.region, { text: r.ref || "Duke, 1992", muted: true }]) }],
+    });
+    sources.push({ label: "USDA-ARS Dr. Duke's Ethnobotanical Database – uses for this plant", url: ethno.url, verified: true });
+    sources.push({ label: "Dr. Duke's – traditional uses (CSV download)", url: ethno.csv, verified: true });
   } else {
-    res = await europePMC(`"${name}" AND ${cfg.q}`, 8);
+    blocks.push({ type: "note", tone: "info", text: "No traditional-use records for this species in USDA Dr. Duke's Ethnobotanical Database." });
   }
-  const wiki = await safe(wikiSections(name));
+
+  // 2. Pharmacological activities
+  blocks.push({ type: "heading", n: 2, text: "Pharmacological activities studied", sub: "PubMed papers indexed with each official MeSH pharmacological term" });
+  const pharmaBars = PHARMA.map(([label, m]) => ({ label, value: pharma[m] ?? -1, href: pubmedUrl(`${sp} AND ("${m}"[MeSH Terms] OR "${m}"[Pharmacological Action])`) }))
+    .filter((x) => x.value > 0)
+    .sort((a, b) => b.value - a.value);
+  if (pharmaBars.length) blocks.push({ type: "bars", title: "Activities by number of papers", verified: true, items: pharmaBars, caption: "Live counts from PubMed (plant named in title or abstract). Tap a bar to see those papers on PubMed." });
+  else blocks.push({ type: "note", tone: "info", text: "No papers indexed with pharmacological activity terms yet." });
+
+  // 3. Diseases studied
+  blocks.push({ type: "heading", n: 3, text: "Diseases studied", sub: "Most frequent MeSH diseases in this plant's research" });
+  const dBars = candidates
+    .map((d) => ({ label: d, value: dCounts[d] ?? -1, href: `${ATLAS}/d/m${DISEASES[d]}#organism=${encodeURIComponent(name)}` }))
+    .filter((x) => x.value > 0)
+    .sort((a, b) => b.value - a.value);
+  if (dBars.length) blocks.push({ type: "bars", title: "Diseases by number of papers", verified: true, items: dBars, caption: "Disease terms from NLM MeSH; counts from PubMed. Tap a disease to open all its research in Research Atlas, filtered to this plant." });
+  else blocks.push({ type: "note", tone: "info", text: "Not enough MeSH-indexed papers to list diseases studied." });
+
+  // 4. Clinical evidence
+  blocks.push({ type: "heading", n: 4, text: "Clinical evidence", sub: "Systematic reviews, meta-analyses and human trials only" });
+  if (clinical.items.length) blocks.push({ type: "papers", verified: true, total: clinical.total, title: "Strongest evidence first", items: rank(clinical.items).slice(0, 6) });
+  else blocks.push({ type: "note", tone: "warn", text: "No systematic reviews or human clinical trials found. Evidence so far comes from lab or animal studies." });
+
+  // 5. Active compounds
+  blocks.push({ type: "heading", n: 5, text: "Active compounds behind the effects", sub: "Highest measured concentrations (full list in Phytochemicals)" });
+  const measured = (duke?.rows || []).filter((r) => (r.high ?? r.low) != null && !NOT_COMPOUNDS.test(r.chemical)).sort((a, b) => (b.high ?? b.low ?? 0) - (a.high ?? a.low ?? 0));
+  if (measured.length) {
+    blocks.push({
+      type: "table",
+      verified: true,
+      columns: ["Compound", "Plant part", "Range (ppm)", "Known activities"],
+      align: ["left", "left", "right", "right"],
+      rows: measured.slice(0, 8).map((r) => [{ text: prettyChem(r.chemical), href: pubchem(prettyChem(r.chemical)) }, r.part, ppm(r.low, r.high), String(r.activities)]),
+    });
+    sources.push({ label: "USDA-ARS Dr. Duke's Phytochemical Database – chemicals in this plant", url: duke!.url, verified: true });
+  } else blocks.push({ type: "note", tone: "info", text: "No measured compound concentrations recorded. See the Phytochemicals section for compounds reported in the literature." });
+
+  // 6. Safety & toxicity
+  blocks.push({ type: "heading", n: 6, text: "Safety & toxicity", sub: "Toxicity, side effects and herb–drug interactions" });
+  if (safety.items.length) blocks.push({ type: "papers", verified: true, total: safety.total, title: "Safety studies", items: rank(safety.items) });
+  else blocks.push({ type: "note", tone: "info", text: "No toxicity or adverse-effect studies found. Absence of studies is not evidence of safety." });
+
+  // 7. Research papers, ranked
+  blocks.push({ type: "heading", n: 7, text: "Research papers", sub: "Ranked standard-first: systematic reviews → trials → reviews → articles → case reports → preprints" });
+  if (research.items.length) blocks.push({ type: "papers", verified: true, total: research.total, ranked: true, tierCounts: tiers, items: rank(research.items).slice(0, 15) });
+  else blocks.push({ type: "note", tone: "info", text: "No medicinal research papers found for this species." });
+
+  blocks.push({ type: "note", tone: "warn", text: "Research summary for education only, not medical advice. Consult a qualified doctor before using any plant medicinally." });
+
+  sources.push(
+    { label: "PubMed – all medicinal research on this plant", url: pubmedUrl(medQ), verified: true },
+    { label: "PubMed – clinical evidence (systematic reviews and trials)", url: pubmedUrl(clinQ), verified: true },
+    { label: "PubMed – safety and toxicity studies", url: pubmedUrl(safeQ), verified: true },
+    { label: "NLM Medical Subject Headings (MeSH) – disease and pharmacology terms", url: "https://www.nlm.nih.gov/mesh/", verified: true },
+    { label: "Europe PMC – citation counts", url: "https://europepmc.org/", verified: true },
+  );
+  return { blocks, sources };
+}
+
+/* ===================== ETHNOBOTANICAL & ECONOMIC (ranked papers) ===================== */
+
+async function uses(ctx: Ctx, kind: "ethnobotanical" | "economic"): Promise<SectionData> {
+  const name = cleanName(ctx.name);
+  const cname = countryName(ctx.country);
+  const sp = `"${name}"[tiab]`;
+  const cfg = {
+    ethnobotanical: {
+      q: `${sp} AND (ethnobotan*[tiab] OR ethnomedic*[tiab] OR ethnopharmacolog*[tiab] OR traditional[tiab] OR folk[tiab] OR indigenous[tiab] OR "medicine, traditional"[MeSH Terms] OR "ethnobotany"[MeSH Terms])`,
+      wiki: ["tradition", "folk", "culture", "ethno", "religio", "ayurved", "uses"],
+      intro: `Ethnobotanical studies on traditional use, ranked standard-first; ${cname} studies shown first when available.`,
+    },
+    economic: {
+      q: `${sp} AND (economic*[tiab] OR timber[tiab] OR fibre[tiab] OR fiber[tiab] OR food[tiab] OR fodder[tiab] OR dye[tiab] OR oil[tiab] OR cultivation[tiab] OR commercial[tiab] OR agroforestry[tiab] OR "crop production"[tiab])`,
+      wiki: ["uses", "cultivation", "culinary", "food", "timber", "economic", "commercial", "agricult"],
+      intro: "Peer-reviewed research on economic uses (food, timber, fibre, oil, fodder and more), ranked standard-first.",
+    },
+  }[kind];
+  const [res, local, wiki] = await Promise.all([
+    pmPapers(cfg.q, 40),
+    kind === "ethnobotanical" ? pmPapers(`(${cfg.q}) AND ("${cname}"[tiab] OR "${cname}"[ad])`, 8) : Promise.resolve({ total: 0, items: [] }),
+    safe(wikiSections(name)),
+  ]);
+  const tiers = res.total ? await tierCounts(cfg.q, res.total) : undefined;
   const web = wiki ? pickWiki(wiki.sections, cfg.wiki) : null;
+  const items = dedupePapers([...rank(local.items).slice(0, 3), ...rank(res.items)]).slice(0, 12);
 
-  if (res.items.length) {
-    blocks.push({ type: "papers", verified: true, total: res.total, items: res.items });
-    if (note) blocks.unshift({ type: "note", tone: "info", text: note });
-  }
-  if (web) {
-    blocks.push({ type: "text", title: `From the web · ${web.heading}`, text: web.text, verified: false, via: "Wikipedia" });
-  }
-  if (!res.items.length && !web) return empty(`No published ${kind} information was found for this species.`);
-  if (!res.items.length) blocks.unshift({ type: "note", tone: "warn", text: "No peer-reviewed studies found. Showing general web information (not verified)." });
+  const blocks: Block[] = [{ type: "note", tone: "info", text: cfg.intro }];
+  if (items.length) blocks.push({ type: "papers", verified: true, total: res.total, ranked: true, tierCounts: tiers, items });
+  if (web) blocks.push({ type: "text", title: `From the web · ${web.heading}`, text: web.text, verified: false, via: "Wikipedia" });
+  if (!items.length && !web) return empty(`No published ${kind} information was found for this species.`);
+  if (!items.length) blocks.splice(1, 0, { type: "note", tone: "warn", text: "No peer-reviewed studies found. Showing general web information (not verified)." });
 
-  const sources: Source[] = res.items.map((p) => ({ label: `${p.authors} (${p.year}). ${p.title.slice(0, 90)}${p.title.length > 90 ? "…" : ""}`, url: p.href, verified: true }));
-  sources.push({ label: "Europe PMC – all matching studies", url: `https://europepmc.org/search?query=${encodeURIComponent(`"${name}" AND ${cfg.q}`)}`, verified: true });
+  const sources: Source[] = items.map((p) => ({ label: `${p.authors} (${p.year}). ${p.title.slice(0, 90)}${p.title.length > 90 ? "…" : ""}`, url: p.href, verified: true }));
+  sources.push({ label: "PubMed – all matching studies", url: pubmedUrl(cfg.q), verified: true });
   if (web && wiki) sources.push({ label: `Wikipedia – ${wiki.title}`, url: wiki.url, verified: false });
-  return { blocks: [{ type: "note", tone: "info", text: cfg.intro }, ...blocks], sources };
+  return { blocks, sources };
 }
 
 function dedupePapers<T extends { title: string }>(a: T[]): T[] {
@@ -764,12 +960,13 @@ function title(s: string) {
 
 const BUILDERS: Record<SectionId, (c: Ctx) => Promise<SectionData>> = {
   overview,
+  photos,
   taxonomy,
   systematics,
   distribution,
   conservation,
   phytochemicals,
-  medicinal: (c) => uses(c, "medicinal"),
+  medicinal,
   ethnobotanical: (c) => uses(c, "ethnobotanical"),
   economic: (c) => uses(c, "economic"),
 };

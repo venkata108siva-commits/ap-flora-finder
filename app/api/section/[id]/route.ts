@@ -3,9 +3,9 @@ import { buildSection } from "@/lib/sections";
 import type { SectionId } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-const IDS: SectionId[] = ["overview", "taxonomy", "systematics", "distribution", "conservation", "phytochemicals", "medicinal", "ethnobotanical", "economic"];
+const IDS: SectionId[] = ["overview", "photos", "taxonomy", "systematics", "distribution", "conservation", "phytochemicals", "medicinal", "ethnobotanical", "economic"];
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

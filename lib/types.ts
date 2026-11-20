@@ -6,7 +6,7 @@ export type Species = {
   family: string;
   genus: string;
   common: string[];
-  score: number; // 0..1
+  score: number; // 0..1, or -1 when chosen by name search
   powo?: string | null;
   gbif?: number | null;
 };
@@ -44,7 +44,8 @@ export type Block =
       caption?: string;
     }
   | { type: "lineage"; verified: boolean; items: { rank: string; name: string; clade?: boolean }[] }
-  | { type: "bars"; title: string; verified: boolean; items: { label: string; value: number; highlight?: boolean }[]; unit?: string }
+  | { type: "bars"; title: string; verified: boolean; items: { label: string; value: number; highlight?: boolean; href?: string }[]; unit?: string; caption?: string }
+  | { type: "heading"; text: string; sub?: string; n?: number }
   | { type: "map"; title: string; base: string; overlay: string; verified: boolean; caption?: string }
   | { type: "redlist"; code: string; verified: boolean }
   | { type: "chips"; title?: string; verified: boolean; items: { label: string; href?: string; tone?: "native" | "introduced" | "neutral" }[] }
@@ -52,7 +53,15 @@ export type Block =
       type: "papers";
       verified: boolean;
       total: number;
-      items: { title: string; authors: string; journal: string; year: string; cited: number; open: boolean; href: string }[];
+      title?: string;
+      ranked?: boolean;
+      tierCounts?: Record<string, number>;
+      items: { title: string; authors: string; journal: string; year: string; cited: number; open: boolean; href: string; tier?: number; tierLabel?: string; types?: string[] }[];
+    }
+  | {
+      type: "gallery";
+      groups: { id: string; label: string; verified: boolean; items: { thumb: string; full: string; credit: string; license: string; href: string; part: string; place?: string; date?: string }[] }[];
+      note?: string;
     }
   | { type: "records"; title: string; verified: boolean; items: { place: string; date: string; kind: string; href: string }[] }
   | { type: "note"; tone: "info" | "warn"; text: string }
@@ -65,6 +74,7 @@ export type SectionData = {
 
 export type SectionId =
   | "overview"
+  | "photos"
   | "taxonomy"
   | "systematics"
   | "distribution"
