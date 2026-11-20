@@ -2,6 +2,7 @@
 import type { Block, Cell, SectionData, SectionId, Source } from "./types";
 import { cleanName, fmt, safe } from "./http";
 import { PM_TIERS, rank } from "./rank";
+import { API_SOURCE, iastToDevanagari, sanskritFor } from "./sanskrit";
 import { pmCounts, pmMesh, pmPapers, pmSearch, pubmedUrl } from "./pubmed";
 import diseaseNames from "@/data/disease-names.json";
 import {
@@ -90,8 +91,18 @@ async function overview(ctx: Ctx): Promise<SectionData> {
     facts.items.push({ label: "Family", value: sp?.family || m?.family || ctx.family || "—", verified: !!(sp?.family || m?.family) });
     if (sp?.genus || m?.genus) facts.items.push({ label: "Genus", value: sp?.genus || m?.genus, italic: true, verified: true });
     if (m?.status) facts.items.push({ label: "Taxonomic status", value: title(m.status.toLowerCase().replace(/_/g, " ")), verified: true });
+    const sk = uniqBy([...sanskritFor(name), ...(m?.species && m.species !== name ? sanskritFor(m.species) : [])], (e) => e.sa);
+    if (sk.length) {
+      facts.items.push({
+        label: `Sanskrit name${sk.length > 1 ? "s" : ""}`,
+        value: sk.map((e) => `${e.sa} (${iastToDevanagari(e.sa)})${e.parts.length ? ` – ${e.parts.join(", ")}` : ""}`).join("; "),
+        verified: true,
+        speak: sk[0].sa.normalize("NFD").replace(/[\u0300-\u036f]/g, ""),
+      });
+    }
   }
   blocks.push(facts);
+  if (sanskritFor(name).length || (m?.species && sanskritFor(m.species).length)) sources.push({ label: API_SOURCE.label, url: API_SOURCE.url, verified: true });
 
   // Local-language names: GBIF checklists (verified) + Wikidata (general web)
   const byLang = new Map<string, { names: Set<string>; verified: boolean }>();
@@ -950,6 +961,10 @@ function dedupePapers<T extends { title: string }>(a: T[]): T[] {
 
 function empty(text: string): SectionData {
   return { blocks: [{ type: "note", tone: "info", text }], sources: [] };
+}
+function uniqBy<T>(a: T[], k: (x: T) => string): T[] {
+  const seen = new Set<string>();
+  return a.filter((x) => (seen.has(k(x)) ? false : (seen.add(k(x)), true)));
 }
 function uniq<T>(a: T[]): T[] {
   return [...new Set(a.filter(Boolean))];

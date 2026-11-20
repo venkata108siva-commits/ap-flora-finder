@@ -23,3 +23,11 @@ Pl@ntNet · GBIF · Kew (POWO / WCVP) · NCBI Taxonomy · IUCN Red List (via GBI
 3. `npm run dev` and open http://localhost:3000
 
 Built with Next.js 15 (App Router) and deployed on Vercel.
+
+## Search by name
+Scientific names, common names (GBIF Backbone) and **Sanskrit names**, typed in Roman letters with or without diacritics or in Devanagari (e.g. *haridra*, *Haridrā*, *हरिद्रा*).
+
+Sanskrit names are the official monograph names of the **Ayurvedic Pharmacopoeia of India** (Govt of India), taken from IMPPAT 2.0, Institute of Mathematical Sciences, Chennai (https://cb.imsc.res.in/imppat/, licence CC BY-NC-ND 4.0, non-commercial use with attribution). Rebuild the list with:
+```bash
+python3 scripts/build-sanskrit.py IMPPAT_SingleHerbalFormulations.tsv
+```

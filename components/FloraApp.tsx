@@ -511,7 +511,7 @@ export default function FloraApp() {
           <span>© {new Date().getFullYear()} Global Flora Finder · For education and research.</span>
           <span>
             Identification by <a href="https://plantnet.org" target="_blank" rel="noreferrer">Pl@ntNet</a> · Data from GBIF, Kew, NCBI, IUCN, USDA, PubChem,
-            Europe PMC & Wikidata
+            Europe PMC & Wikidata · Sanskrit names from the Ayurvedic Pharmacopoeia of India via <a href="https://cb.imsc.res.in/imppat/" target="_blank" rel="noreferrer">IMPPAT</a> (CC BY-NC-ND)
           </span>
         </div>
       </footer>

@@ -65,7 +65,10 @@ function BlockView({ b }: { b: Block }) {
                     <i>{f.value}</i> <Speak text={f.value.split(" ").filter((w, i) => i < 2 || /^(subsp|var)\.?$/.test(w)).slice(0, 4).join(" ")} size={14} />
                   </>
                 ) : (
-                  f.value
+                  <>
+                    {f.value}
+                    {f.speak && <Speak text={f.speak} size={14} />}
+                  </>
                 )}
               </dd>
             </div>

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Search } from "lucide-react";
 
-export type NameHit = { key: number; name: string; author: string; family: string; genus: string; common?: string; via?: string };
+export type NameHit = { key: number; name: string; author: string; family: string; genus: string; common?: string; via?: string; sanskrit?: string };
 
 /** Search plants by scientific or common name (GBIF Backbone). */
 export function NameSearch({ onPick, placeholder }: { onPick: (h: NameHit) => void; placeholder?: string }) {
@@ -66,7 +66,7 @@ export function NameSearch({ onPick, placeholder }: { onPick: (h: NameHit) => vo
           else if (e.key === "Enter" && hits[sel]) pick(hits[sel]);
           else if (e.key === "Escape") setOpen(false);
         }}
-        placeholder={placeholder || "Search by scientific or common name, e.g. Withania somnifera, neem, tulsi"}
+        placeholder={placeholder || "Search by scientific, common or Sanskrit name, e.g. Withania somnifera, neem, haridra, तुलसी"}
         aria-label="Search plants by name"
         aria-expanded={open}
         aria-autocomplete="list"
@@ -78,7 +78,13 @@ export function NameSearch({ onPick, placeholder }: { onPick: (h: NameHit) => vo
               <span style={{ minWidth: 0 }}>
                 <i>{h.name}</i> <span style={{ color: "var(--ink-3)", fontSize: ".82rem" }}>{h.author}</span>
                 <small>
-                  {h.common ? `Common name: ${h.common}` : h.via ? `Accepted name (${h.via})` : "Accepted name · GBIF Backbone"}
+                  {h.sanskrit
+                    ? `Sanskrit: ${h.sanskrit} · Ayurvedic Pharmacopoeia of India ✓`
+                    : h.common
+                      ? `Common name: ${h.common}`
+                      : h.via
+                        ? `Accepted name (${h.via})`
+                        : "Accepted name · GBIF Backbone"}
                 </small>
               </span>
               {h.family && <span className="fam">{h.family}</span>}

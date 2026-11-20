@@ -25,6 +25,7 @@ export type Fact = {
   verified?: boolean;
   href?: string;
   italic?: boolean;
+  speak?: string; // text for the pronunciation button
 };
 
 export type Cell = string | { text: string; href?: string; italic?: boolean; muted?: boolean };

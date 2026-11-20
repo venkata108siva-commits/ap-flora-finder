@@ -1,15 +1,19 @@
 import { NextResponse } from "next/server";
-import { gbifSpecies, gbifSuggest } from "@/lib/sources";
+import { gbifMatch, gbifSpecies, gbifSuggest } from "@/lib/sources";
+import { iastToDevanagari, searchSanskrit } from "@/lib/sanskrit";
 
 export const runtime = "nodejs";
 
-type Hit = { key: number; name: string; author: string; family: string; genus: string; common?: string; via?: string; score?: number };
+type Hit = { key: number; name: string; author: string; family: string; genus: string; common?: string; via?: string; sanskrit?: string; score?: number };
 
 /** Plant name suggestions from the GBIF Backbone: scientific names (synonyms resolved) and common names. */
 export async function GET(req: Request) {
-  const q = (new URL(req.url).searchParams.get("q") || "").replace(/[^\p{L}\s.\-×']/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60);
+  const q = (new URL(req.url).searchParams.get("q") || "").replace(/[^\p{L}\p{M}\s.\-×']/gu, " ").replace(/\s+/g, " ").trim().slice(0, 60);
   if (q.length < 2) return NextResponse.json({ items: [] });
-  const { sci, vern } = await gbifSuggest(q);
+  // Sanskrit names (Ayurvedic Pharmacopoeia of India) are matched locally, in parallel with GBIF.
+  const skEntries = searchSanskrit(q, 4);
+  const skPlants = skEntries.flatMap((e) => e.plants.map((plant) => ({ e, plant }))).slice(0, 5);
+  const [{ sci, vern }, skMatches] = await Promise.all([gbifSuggest(q), Promise.all(skPlants.map((x) => gbifMatch(x.plant)))]);
   const out: Hit[] = [];
   const seen = new Set<number>();
   const push = (h: Hit) => {
@@ -49,6 +53,19 @@ export async function GET(req: Request) {
       return;
     }
     push({ key, name: v.canonicalName || v.scientificName, author: v.authorship || "", family: v.family || "", genus: v.genus || "", common, score: exact ? 0.5 + i / 100 : 2.5 + i / 100 });
+  });
+  skPlants.forEach(({ e, plant }, i) => {
+    const m = skMatches[i];
+    if (!m) return;
+    const key = m.acceptedUsageKey || m.usageKey;
+    const label = `${e.sa} · ${iastToDevanagari(e.sa)}${e.parts.length ? ` (${e.parts.join(", ")})` : ""}`;
+    const existing = out.find((h) => h.key === key);
+    if (existing) {
+      existing.sanskrit = existing.sanskrit || label;
+      existing.score = Math.min(existing.score ?? 9, 0.3 + i / 100);
+      return;
+    }
+    out.push({ key, name: m.species || m.canonicalName || plant, author: "", family: m.family || "", genus: m.genus || "", sanskrit: label, score: 0.3 + i / 100 });
   });
   out.sort((a, b) => (a.score ?? 9) - (b.score ?? 9));
   return NextResponse.json({ items: out.slice(0, 10).map(({ score, ...h }) => h) }, { headers: { "Cache-Control": "public, s-maxage=86400" } });
