@@ -863,7 +863,7 @@ async function medicinal(ctx: Ctx): Promise<SectionData> {
 
   // 4. Clinical evidence
   blocks.push({ type: "heading", n: 4, text: "Clinical evidence", sub: "Systematic reviews, meta-analyses and human trials only" });
-  if (clinical.items.length) blocks.push({ type: "papers", verified: true, total: clinical.total, title: "Strongest evidence first", items: rank(clinical.items).slice(0, 6) });
+  if (clinical.items.length) blocks.push({ type: "papers", verified: true, total: clinical.total, title: "Strongest evidence first", items: rank(clinical.items, name).slice(0, 6) });
   else blocks.push({ type: "note", tone: "warn", text: "No systematic reviews or human clinical trials found. Evidence so far comes from lab or animal studies." });
 
   // 5. Active compounds
@@ -882,12 +882,12 @@ async function medicinal(ctx: Ctx): Promise<SectionData> {
 
   // 6. Safety & toxicity
   blocks.push({ type: "heading", n: 6, text: "Safety & toxicity", sub: "Toxicity, side effects and herb–drug interactions" });
-  if (safety.items.length) blocks.push({ type: "papers", verified: true, total: safety.total, title: "Safety studies", items: rank(safety.items) });
+  if (safety.items.length) blocks.push({ type: "papers", verified: true, total: safety.total, title: "Safety studies", items: rank(safety.items, name) });
   else blocks.push({ type: "note", tone: "info", text: "No toxicity or adverse-effect studies found. Absence of studies is not evidence of safety." });
 
   // 7. Research papers, ranked
   blocks.push({ type: "heading", n: 7, text: "Research papers", sub: "Ranked standard-first: systematic reviews → trials → reviews → articles → case reports → preprints" });
-  if (research.items.length) blocks.push({ type: "papers", verified: true, total: research.total, ranked: true, tierCounts: tiers, items: rank(research.items).slice(0, 15) });
+  if (research.items.length) blocks.push({ type: "papers", verified: true, total: research.total, ranked: true, tierCounts: tiers, items: rank(research.items, name).slice(0, 15) });
   else blocks.push({ type: "note", tone: "info", text: "No medicinal research papers found for this species." });
 
   blocks.push({ type: "note", tone: "warn", text: "Research summary for education only, not medical advice. Consult a qualified doctor before using any plant medicinally." });
@@ -927,7 +927,7 @@ async function uses(ctx: Ctx, kind: "ethnobotanical" | "economic"): Promise<Sect
   ]);
   const tiers = res.total ? await tierCounts(cfg.q, res.total) : undefined;
   const web = wiki ? pickWiki(wiki.sections, cfg.wiki) : null;
-  const items = dedupePapers([...rank(local.items).slice(0, 3), ...rank(res.items)]).slice(0, 12);
+  const items = dedupePapers([...rank(local.items, name).slice(0, 3), ...rank(res.items, name)]).slice(0, 12);
 
   const blocks: Block[] = [{ type: "note", tone: "info", text: cfg.intro }];
   if (items.length) blocks.push({ type: "papers", verified: true, total: res.total, ranked: true, tierCounts: tiers, items });

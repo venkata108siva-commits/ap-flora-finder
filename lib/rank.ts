@@ -30,9 +30,15 @@ export function score(p: Paper, now = new Date().getFullYear()): number {
   return tierPts + cit + med + oa + rec;
 }
 
-export function rank(items: Paper[]): Paper[] {
+/** Rank standard-first. With `focus` (e.g. the plant name), papers naming it in the title rank first within each tier. */
+export function rank(items: Paper[], focus?: string): Paper[] {
+  const words = (focus || "").toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  const inTitle = (p: Paper) => {
+    const t = p.title.toLowerCase();
+    return words.length && (t.includes(words.join(" ")) || (words[0] && t.includes(words[0]))) ? 60 : 0;
+  };
   return items
-    .map((p) => ({ ...p, tier: tierOf(p).n, tierLabel: tierOf(p).short, _s: score(p) }))
+    .map((p) => ({ ...p, tier: tierOf(p).n, tierLabel: tierOf(p).short, _s: score(p) + inTitle(p) }))
     .sort((a, b) => b._s - a._s)
     .map(({ _s, ...p }) => p);
 }
